@@ -6,7 +6,7 @@ from collections import defaultdict
 import os
 import glob
 
-from PIL import Image, ImageQt
+from PIL import Image, ImageQt, UnidentifiedImageError
 import tqdm
 
 import PyQt5.QtWidgets as widgets
@@ -15,34 +15,44 @@ from PyQt5.QtCore import Qt
 
 
 
-def get_info(impath):
-    with Image.open(impath) as imagefile:
+def get_info(impath, load_pixels=False):
+    """Turn info about image file into a string"""
+    try:
+        with Image.open(impath) as imagefile:
+            if not load_pixels:
+                result = {
+                    "filesize": os.stat(impath).st_size,
+                    "filename": impath,
+                    "size": imagefile.size,
+                    "creation_time": imagefile.getexif().get(36867),
+                    "format": imagefile.format,
+                    "exif": imagefile.getexif()
+                }
+                result["hash"] = "{filesize}:{size}:{format}".format(**result)
+            else:
+                result = {
+                    "filesize": os.stat(impath).st_size,
+                    "filename": impath,
+                    "size": imagefile.size,
+                    "creation_time": imagefile.getexif().get(36867),
+                    "format": imagefile.format,
+                    "exif": imagefile.getexif(),
+                    "pixel0": imagefile.getpixel((0, 0)),
+                    "pixel1": imagefile.getpixel((imagefile.size[0]//2, imagefile.size[1]//2)),
+                }
+                result["hash"] = "{filesize}:{size}:{pixel0}:{pixel1}:{format}".format(**result)
+    except UnidentifiedImageError:
         result = {
             "filesize": os.stat(impath).st_size,
-            "size": imagefile.size,
-            "creation_time": imagefile.getexif().get(36867),
-            "format": imagefile.format,
-            "exif": imagefile.getexif()
+            "filename": impath,
         }
-    result["hash"] = "{filesize}:{size}:{format}".format(**result)
-    return result
+        result["hash"] = "{filesize}:{impath}".format(**result)
 
-
-def superhash(impath):
-    with Image.open(impath) as imagefile:
-        result = {
-            "filesize": os.stat(impath).st_size,
-            "size": imagefile.size,
-            "format": imagefile.format,
-            "pixel0": imagefile.getpixel((0, 0)),
-            "pixel1": imagefile.getpixel((imagefile.size[0]//2, imagefile.size[1]//2)),
-            "exif": imagefile.getexif()
-        }
-    result["hash"] = "{filesize}:{size}:{pixel0}:{pixel1}:{format}".format(**result)
     return result
 
 
 def search(root):
+    """Generator function to crawl all files in directory"""
     for f in glob.glob(os.path.join(root, "*")):
         if os.path.isdir(f):
             for result in search(f):
@@ -52,10 +62,12 @@ def search(root):
 
 
 def filter_duplicates(hashes):
+    """Remove all elements of a dictionary who only have values of length 1"""
     return {k: v for k, v in hashes.items() if len(v) > 1}
 
 
 def pretty(info):
+    """Pretty print of exif data"""
     string = """
     Taken: {}
     Source: {}
@@ -64,6 +76,7 @@ def pretty(info):
 
 
 class SelectionWindow(widgets.QWidget):
+    """Panel for a single image and exif data"""
     def __init__(self, path):
         super().__init__()
         self.path = path
@@ -87,6 +100,8 @@ class SelectionWindow(widgets.QWidget):
 
 
 class DuplicateFinder(widgets.QWidget):
+    """Main window for duplicate validation gui
+    """
     def __init__(self, hashes):
         super().__init__()
         self.hashes = hashes
@@ -113,10 +128,12 @@ class DuplicateFinder(widgets.QWidget):
         self.setLayout(self.layout)
 
     def set_images(self, images):
+        """Update the images shown"""
         for path in images:
             self.selection_layout.addWidget(SelectionWindow(path))
 
     def choose_index(self, idx):
+        """Choose a different set of images"""
         for i in reversed(range(self.selection_layout.count())):
             w = self.selection_layout.itemAt(i).widget()
             if isinstance(w, SelectionWindow):
@@ -135,44 +152,42 @@ if __name__ == "__main__":
     impath = sys.argv[1]
 
     print("Searching for duplicates")
-
     hashes = defaultdict(list)
-    duplicates_found = 0
-
     progressbar = tqdm.tqdm(search(impath))
+    _duplicates_found = 0
     for filename in progressbar:
-        progressbar.set_description("Duplicates Found: {}. Looking in {}".format(duplicates_found, os.path.dirname(filename)))
+        progressbar.set_description("Duplicates Found: {}. Looking in {}".format(_duplicates_found, os.path.dirname(filename)))
         try:
             info = get_info(filename)
         except:
             hashes[filename].append(filename)
         else:
             if info["hash"] in hashes:
-                duplicates_found += 1
+                _duplicates_found += 1
             hashes[info["hash"]].append(filename)
 
     hashes = filter_duplicates(hashes)
     print("Validating {} potential duplicates".format(len(hashes)))
-    superhashes = defaultdict(list)
+    hashes2 = defaultdict(list)
     for k, v in tqdm.tqdm(list(filter_duplicates(hashes).items())):
         # If all the filenames in v have the same creation date, we're good
         if len(set([get_info(filename)["creation_time"] for filename in v])) == 1:
-            superhashes[k] = v
+            hashes2[k] = v
             continue
 
         ## If not, we include some pixel info in the hash (excluded before because its much slower)
         for filename in v:
             try:
-                info = superhash(filename)
+                info = get_info(filename, load_pixels=True)
             except:
-                superhashes[filename].append(filename)
+                hashes2[filename].append(filename)
             else:
-                superhashes[info["hash"]].append(filename)
+                hashes2[info["hash"]].append(filename)
 
-    superhashes = filter_duplicates(superhashes)
-    print("Identified {} duplicates".format(len(superhashes)))
+    hashes2 = filter_duplicates(hashes2)
+    print("Identified {} duplicates".format(len(hashes2)))
     print("Launching GUI...")
 
     app = widgets.QApplication(sys.argv)
-    ex = DuplicateFinder(superhashes)
+    ex = DuplicateFinder(hashes2)
     sys.exit(app.exec_())
