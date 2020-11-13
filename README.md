@@ -2,9 +2,14 @@
 
 ## Usage
 
+Script for identifying duplicates
 ```
 python code/dedupe.py "C:\Users\kevin\Pictures"
+```
 
+Scripts for grouping similarly dated photos / potential albums
+```
+TODO
 ```
 
 ## Install
