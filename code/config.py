@@ -1,0 +1,3 @@
+FILE_METADATA_PICKLE_FILE = "cached_times.pkl"
+
+OUTPUT_PHOTO_LIBRARY = ""
