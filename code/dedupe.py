@@ -14,7 +14,6 @@ import PyQt5.QtGui as gui
 from PyQt5.QtCore import Qt
 
 
-
 def get_info(impath, load_pixels=False):
     """Turn info about image file into a string"""
     try:

@@ -1,5 +1,8 @@
 """
 Collect the datetimes of all photos
+
+This script is expanded to not just get datetimes but also when there are AAE files and
+find their actual image pairs
 """
 
 import datetime
@@ -8,6 +11,7 @@ import io
 import os
 import pickle
 import pprint
+import time
 from collections import defaultdict
 
 from PIL import Image, UnidentifiedImageError
@@ -16,6 +20,7 @@ import ffmpeg
 import pyheif
 import tqdm
 
+import config
 from filesystem import search
 
 pp = pprint.PrettyPrinter(indent=4)
@@ -39,8 +44,6 @@ def _time_parser(time_string):
 
     raise ValueError("Could not find a time parser for time {}".format(time_string))
 
-
-import time
 
 def detect_by_date_taken(root):
     results = []
@@ -138,12 +141,12 @@ if __name__ == "__main__":
     import sys
     impath = sys.argv[1]
 
-    if os.path.exists("cached_times.pkl"):
-        with open("cached_times.pkl", "rb") as picklefile:
+    if os.path.exists(config.FILE_METADATA_PICKLE_FILE):
+        with open(config.FILE_METADATA_PICKLE_FILE, "rb") as picklefile:
             results = pickle.load(picklefile)
     else:
         results = detect_by_date_taken(impath)
-        with open("cached_times.pkl", "wb") as picklefile:
+        with open(config.FILE_METADATA_PICKLE_FILE, "wb") as picklefile:
             pickle.dump(results, picklefile)
 
     results, lone_aae, aae_img_map = results
